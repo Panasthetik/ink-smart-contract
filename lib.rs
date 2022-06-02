@@ -3,28 +3,53 @@
 use ink_lang as ink;
 
 #[ink::contract]
-mod nftink {
+mod nftexpanded {
     use ink_storage::{
         traits::SpreadAllocate,
         Mapping,
     };
+
+    #[ink(event)]
+    pub struct EventMint { 
+        owner: AccountId, 
+        value: u64 
+    }
+
+    #[ink(event)]
+    pub struct EventTransfer { 
+        from: AccountId, 
+        to: AccountId, 
+        token_id: u64 
+    }
+
+    #[ink(event)]
+    pub struct EventApproval {
+        owner: AccountId, 
+        spender: AccountId, 
+        token_id: u64, 
+        approved: bool }
+
+
     /// Defines the storage of your contract.
     /// Add new fields to the below struct in order
     /// to add new static storage fields to your contract.
     #[ink(storage)]
     #[derive(SpreadAllocate)]
-    pub struct Nftink {
+    pub struct Nftexpanded {
         owner: AccountId,
+        total_minted: u64,
         id_to_owner: ink_storage::Mapping<u64, AccountId>,
         owner_to_token_count: ink_storage::Mapping<AccountId, u64>,
+        approvals: ink_storage::Mapping<u64, AccountId>,
     }
 
-    impl Nftink {
+    impl Nftexpanded {
 
         #[ink(constructor)]
         pub fn default() -> Self {
             ink_lang::utils::initialize_contract(|contract: &mut Self| {
                 let caller = Self::env().caller();
+                contract.total_minted = 0;
                 contract.owner = caller;
                 contract.id_to_owner.insert(0, &caller);
                 contract.owner_to_token_count.insert(&caller, &0);
@@ -32,16 +57,55 @@ mod nftink {
             })
         }
 
+        #[ink(message)]
+        pub fn is_approved(&self, token_id: u64, approved: AccountId) -> bool {
+            let approval = self.approvals.get(&token_id);
+            let owner = self.owner;
+            let spender = self.env().caller();
+            if let None = approval {
+                return false;
+            }
+            if approval.unwrap() == approved {
+                Self::env().emit_event(EventApproval{
+                    owner,
+                    spender, 
+                    token_id,
+                    approved: true,
+                });
+                return true;
+            }
+            false
+        }
 
+        #[ink(message)]
+        pub fn total_minted(&self) -> u64 {
+            let total_minted = self.total_minted;
+            total_minted
+        }
+        
+        // Redundant -- see below
+        // #[ink(message)]
+        // pub fn balance_of(&self, owner: AccountId) -> u64 {
+        //     let balance = self.owner_to_token_count.get(&owner).unwrap_or(0);
+        //     balance
+        // }
+
+        
         #[ink(message)]
         pub fn mint(&mut self, receiver: AccountId, token_id: u64) -> bool {
             self.id_to_owner.insert(token_id, &receiver);
+            let owner = self.owner;
             let existing_number = self.owner_to_token_count.get(&receiver);
             if let Some(n) = existing_number {
                 self.owner_to_token_count.insert(receiver, &(n + 1));
             } else {
                 self.owner_to_token_count.insert(receiver, &1);
             }
+            self.total_minted += 1;
+            Self::env().emit_event(EventMint {
+                    owner,
+                    value: token_id,
+            });
             true
         }
 
@@ -69,6 +133,11 @@ mod nftink {
 
             self.owner_to_token_count.insert(from, &(from_owner_count - 1));
             self.owner_to_token_count.insert(to, &(to_owner_count + 1));
+            Self::env().emit_event(EventTransfer {
+                    from,
+                    to,
+                    token_id,
+            });
             true
         }
 
@@ -95,7 +164,7 @@ mod nftink {
         #[ink::test]
         fn default_state() {
             //Given
-            let nft = Nftink::default();
+            let nft = Nftexpanded::default();
 
             //When
             let tokens = nft.get_token_count_for_account(AccountId::from([0x1; 32]));
@@ -107,7 +176,7 @@ mod nftink {
         #[ink::test]
         fn mint() {
             //Given
-            let mut nft = Nftink::default();
+            let mut nft = Nftexpanded::default();
             let account_one = AccountId::from([0x1; 32]);
             let token_id = 95;
 
@@ -116,12 +185,13 @@ mod nftink {
 
             //Then
             assert_eq!(nft.get_token_count_for_account(account_one), 1);
+            assert_eq!(nft.total_minted, 1);
         }
 
         #[ink::test]
         fn transfer() {
             //Given
-            let mut nft = Nftink::default();
+            let mut nft = Nftexpanded::default();
             let account_one = AccountId::from([0x1; 32]);
             let account_two = AccountId::from([0x2; 32]);
             let token_id = 95;

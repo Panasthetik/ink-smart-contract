@@ -1,5 +1,5 @@
 # ink-smart-contract
-Sample ink! smart contract for deployment on Substrate-based chain, written in Rust.
+Sample ink! NFT smart contract for deployment on Substrate-based chain, written in Rust.
 
 # status:
 This project is in progress, and the contract is just a template.
